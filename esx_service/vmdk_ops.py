@@ -314,7 +314,12 @@ def find_child(vm_name):
 
 #returns error, or None for OK
 def attachVMDK(vmdk_path, vm_name):
-    vm = findVmByName(vm_name)
+    try:
+       vm = findVmByName(vm_name)
+    except Exception as e:
+       msg = "VM {0} not found".format(vm_name)
+       return err(msg)
+
     logging.info("*** attachVMDK: %s to %s VM uuid = %s",
                  vmdk_path, vm_name, vm.config.uuid)
     return disk_attach(vmdk_path, vm)
@@ -322,7 +327,12 @@ def attachVMDK(vmdk_path, vm_name):
 
 #returns error, or None for OK
 def detachVMDK(vmdk_path, vm_name):
-    vm = findVmByName(vm_name)
+    try:
+       vm = findVmByName(vm_name)
+    except Exception as e:
+       msg = "VM {0} not found".format(vm_name)
+       return err(msg)
+
     logging.info("*** detachVMDK: %s from %s VM uuid = %s",
                  vmdk_path, vm_name, vm.config.uuid)
     return disk_detach(vmdk_path, vm)
@@ -590,6 +600,7 @@ def disk_attach(vmdk_path, vm):
     spec = vim.vm.ConfigSpec()
     spec.deviceChange = disk_changes
 
+    # Handle the most generic exception for a VM reconfig.
     try:
         wait_for_tasks(si, [vm.ReconfigVM_Task(spec=spec)])
     except vim.fault.VimFault as ex:
@@ -634,9 +645,10 @@ def disk_detach(vmdk_path, vm):
     dev_changes.append(disk_spec)
     spec.deviceChange = dev_changes
 
+    # Handle the most generic exception for a VM reconfig.
     try:
         wait_for_tasks(si, [vm.ReconfigVM_Task(spec=spec)])
-    except vim.fault.GenericVmConfigFault as ex:
+    except vim.fault.VimFault as ex:
         for f in ex.faultMessage:
             logging.warning(f.message)
         return err("Failed to detach " + vmdk_path)

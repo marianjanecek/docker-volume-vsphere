@@ -35,10 +35,12 @@ lib = None
 useSideCarCreate = False
 DVOL_KEY = "docker-volume-vsphere"
 
-# Maps to OPEN_BUFFERED | OPEN_LOCK | OPEN_NOFILTERS
+# Results in a buffered, locked, filter-less open,
 # all vmdks are opened with these flags
 VMDK_OPEN_FLAGS = 524312
 
+# Default kv side car alignment
+KV_ALIGN = 4096
 
 # Load the disk lib API library
 def loadDiskLib():
@@ -120,7 +122,7 @@ def volOpenPath(volpath):
 
 
 # Create the side car for the volume identified by volpath.
-def create(volpath, kvDict):
+def create(volpath, kv_dict):
     disk = c_uint32(0)
     objHandle = c_uint32(0)
 
@@ -144,7 +146,7 @@ def create(volpath, kvDict):
     lib.DiskLib_SidecarClose(disk, DVOL_KEY, byref(objHandle))
     lib.DiskLib_Close(disk)
 
-    return save(volpath, kvDict)
+    return save(volpath, kv_dict)
 
 
 # Delete the the side car for the given volume
@@ -166,6 +168,14 @@ def delete(volpath):
     return True
 
 
+def align_str(kv_str):
+   # Align a given KV meta-data string to the next 4K boundary.
+   aligned_len = ((len(kv_str) + (KV_ALIGN - 1)) / KV_ALIGN) * KV_ALIGN - 1
+   padded_str = '{:<{width}}'.format(kv_str, width=aligned_len)
+
+   # Add a trailing newline to bring up string length to a 4K boundary.
+   return '{0}{1}'.format(padded_str, '\n')
+
 # Load and return dictionary from the sidecar
 def load(volpath):
     metaFile = lib.DiskLib_SidecarMakeFileName(volpath, DVOL_KEY)
@@ -175,15 +185,18 @@ def load(volpath):
     except IOError:
         return None
 
-    kvDict = json.load(fh)
-
+    kv_str = fh.read()
     fh.close()
+    try:
+       kv_dict = json.loads(kv_str)
+    except:
+       return None
 
-    return kvDict
+    return kv_dict
 
 
 # Save the dictionary to side car.
-def save(volpath, kvDict):
+def save(volpath, kv_dict):
     metaFile = lib.DiskLib_SidecarMakeFileName(volpath, DVOL_KEY)
 
     try:
@@ -191,8 +204,9 @@ def save(volpath, kvDict):
     except IOError:
         return False
 
-    json.dump(kvDict, fh)
-    fh.write("\n")  # newline makes it easier for human to read
+    kv_str = json.dumps(kv_dict)
 
+    fh.write(align_str(kv_str))
     fh.close()
     return True
+
